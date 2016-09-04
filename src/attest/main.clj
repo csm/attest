@@ -1,4 +1,4 @@
-(ns catool.main
+(ns attest.main
   (:gen-class))
 
 (defn -main

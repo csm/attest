@@ -1,4 +1,4 @@
-(ns catool.core
+(ns attest.core
   (:require [clojure.java.io :refer [reader writer]])
   (:import [java.security KeyPairGenerator]
            [org.bouncycastle.asn1.x500 X500Name]
