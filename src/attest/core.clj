@@ -109,16 +109,17 @@
   (let [subject (X500Name. name)
         expires (doto (Calendar/getInstance) (.add Calendar/YEAR years))
         spki (SubjectPublicKeyInfo/getInstance (.getEncoded (.getPublic key-pair)))
-        builder (X509v3CertificateBuilder. subject
-                                           (biginteger 1N)
-                                           (Date.)
-                                           (.getTime expires)
-                                           subject
-                                           spki)
-        _ (.addExtension builder Extension/keyUsage true (KeyUsage. (bit-or KeyUsage/keyCertSign KeyUsage/cRLSign)))
-        _ (.addExtension builder Extension/basicConstraints true (BasicConstraints. true))
-        _ (.addExtension builder Extension/subjectKeyIdentifier false
-                         (.createSubjectKeyIdentifier (JcaX509ExtensionUtils.) spki))
+        builder (doto
+                  (X509v3CertificateBuilder. subject
+                                             (biginteger 1N)
+                                             (Date.)
+                                             (.getTime expires)
+                                             subject
+                                             spki)
+                  (.addExtension Extension/keyUsage true (KeyUsage. (bit-or KeyUsage/keyCertSign KeyUsage/cRLSign)))
+                  (.addExtension Extension/basicConstraints true (BasicConstraints. true))
+                  (.addExtension Extension/subjectKeyIdentifier false
+                                 (.createSubjectKeyIdentifier (JcaX509ExtensionUtils.) spki)))
         signer (.build
                  (JcaContentSignerBuilder. (str hash-alg "withRSA"))
                  (.getPrivate key-pair))
@@ -130,22 +131,23 @@
   [^X509Certificate cert ^PrivateKey private-key ^PKCS10CertificationRequest csr serial-number
    & {:keys [hash-alg years ^int max-path-length] :or {hash-alg "SHA256" years 1 max-path-length 5}}]
   (let [expires (doto (Calendar/getInstance) (.add Calendar/YEAR years))
-        builder (X509v3CertificateBuilder. (X500Name. (str (.getSubjectX500Principal cert)))
-                                           (biginteger serial-number)
-                                           (Date.)
-                                           (.getTime expires)
-                                           (.getSubject csr)
-                                           (.getSubjectPublicKeyInfo csr))
-        _ (.addExtension builder Extension/keyUsage true (KeyUsage. (bit-or KeyUsage/keyCertSign KeyUsage/cRLSign)))
-        _ (.addExtension builder Extension/basicConstraints true
-                         (if max-path-length
-                           (BasicConstraints. max-path-length)
-                           (BasicConstraints. true)))
-        _ (.addExtension builder Extension/subjectKeyIdentifier false
-                         (.createSubjectKeyIdentifier (JcaX509ExtensionUtils.)
-                                                      (.getSubjectPublicKeyInfo csr)))
-        _ (.addExtension builder Extension/authorityKeyIdentifier false
-                           (.createAuthorityKeyIdentifier (JcaX509ExtensionUtils.) cert))
+        builder (doto
+                  (X509v3CertificateBuilder. (X500Name. (str (.getSubjectX500Principal cert)))
+                                             (biginteger serial-number)
+                                             (Date.)
+                                             (.getTime expires)
+                                             (.getSubject csr)
+                                             (.getSubjectPublicKeyInfo csr))
+                  (.addExtension Extension/keyUsage true (KeyUsage. (bit-or KeyUsage/keyCertSign KeyUsage/cRLSign)))
+                  (.addExtension Extension/basicConstraints true
+                                 (if max-path-length
+                                     (BasicConstraints. max-path-length)
+                                     (BasicConstraints. true)))
+                  (.addExtension Extension/subjectKeyIdentifier false
+                                 (.createSubjectKeyIdentifier (JcaX509ExtensionUtils.)
+                                                              (.getSubjectPublicKeyInfo csr)))
+                  (.addExtension Extension/authorityKeyIdentifier false
+                                 (.createAuthorityKeyIdentifier (JcaX509ExtensionUtils.) cert)))
         signer (.build
                  (JcaContentSignerBuilder. (str hash-alg "withRSA"))
                  private-key)
@@ -156,23 +158,24 @@
   [^X509Certificate cert ^PrivateKey private-key ^PKCS10CertificationRequest csr serial-number
    & {:keys [hash-alg years] :or {hash-alg "SHA256" years 1}}]
   (let [expires (doto (Calendar/getInstance) (.add Calendar/YEAR years))
-        builder (X509v3CertificateBuilder. (JcaX500NameUtil/getSubject cert)
-                                           (biginteger serial-number)
-                                           (Date.)
-                                           (.getTime expires)
-                                           (.getSubject csr)
-                                           (.getSubjectPublicKeyInfo csr))
-        _ (.addExtension builder Extension/basicConstraints true
-                         (BasicConstraints. false))
-        _ (.addExtension builder Extension/extendedKeyUsage false
-                         (ExtendedKeyUsage. (Vector.
-                                              [KeyPurposeId/id_kp_clientAuth
-                                               KeyPurposeId/id_kp_serverAuth])))
-        _ (.addExtension builder Extension/subjectKeyIdentifier false
-                         (.createSubjectKeyIdentifier (JcaX509ExtensionUtils.)
-                                                      (.getSubjectPublicKeyInfo csr)))
-        _ (.addExtension builder Extension/authorityKeyIdentifier false
-                         (.createAuthorityKeyIdentifier (JcaX509ExtensionUtils.) cert))
+        builder (doto
+                  (X509v3CertificateBuilder. (JcaX500NameUtil/getSubject cert)
+                                             (biginteger serial-number)
+                                             (Date.)
+                                             (.getTime expires)
+                                             (.getSubject csr)
+                                             (.getSubjectPublicKeyInfo csr))
+                  (.addExtension Extension/basicConstraints true
+                                 (BasicConstraints. false))
+                  (.addExtension Extension/extendedKeyUsage false
+                                 (ExtendedKeyUsage. (Vector.
+                                                      [KeyPurposeId/id_kp_clientAuth
+                                                       KeyPurposeId/id_kp_serverAuth])))
+                  (.addExtension Extension/subjectKeyIdentifier false
+                                 (.createSubjectKeyIdentifier (JcaX509ExtensionUtils.)
+                                                              (.getSubjectPublicKeyInfo csr)))
+                  (.addExtension Extension/authorityKeyIdentifier false
+                                 (.createAuthorityKeyIdentifier (JcaX509ExtensionUtils.) cert)))
         signer (.build
                  (JcaContentSignerBuilder. (str hash-alg "withRSA"))
                  private-key)
