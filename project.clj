@@ -8,4 +8,5 @@
                  [org.clojure/tools.cli "0.3.5"]]
   :main ^:skip-aot attest.main
   :target-path "target/%s"
-  :profiles {:uberjar {:aot :all}})
+  :profiles {:uberjar {:aot :all}}
+  :plugins [[lein-codox "0.9.6"]])

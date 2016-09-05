@@ -23,12 +23,6 @@
     ;(println "Installing BouncyCastleProvider...")
     (Security/addProvider (BouncyCastleProvider.))))
 
-(defn sha256
-  [^bytes b]
-  (let [h (MessageDigest/getInstance "SHA-256")]
-    (.update h b)
-    (.digest h)))
-
 (defn write-cert
   "Write cert to destination, PEM-formatted. Destination should be openable by clojure.java.io/writer."
   [^X509Certificate cert destination]
@@ -155,6 +149,7 @@
     (.getCertificate (JcaX509CertificateConverter.) certificate)))
 
 (defn generate-user-cert
+  "Generate an end-user cert, for server or client TLS auth."
   [^X509Certificate cert ^PrivateKey private-key ^PKCS10CertificationRequest csr serial-number
    & {:keys [hash-alg years] :or {hash-alg "SHA256" years 1}}]
   (let [expires (doto (Calendar/getInstance) (.add Calendar/YEAR years))

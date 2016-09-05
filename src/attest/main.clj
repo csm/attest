@@ -129,7 +129,7 @@
                      (file (-> args :options :key-output))
                      (file (-> args :options :dir) (-> args :options :key-output)))]
       (write-csr csr csr-file)
-      (write-private-key private-key password key-file))))
+      (write-private-key (.getPrivate key-pair) password key-file))))
 
 (defn print-commands
   []
