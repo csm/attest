@@ -1,12 +1,12 @@
 (ns attest.core
   (:require [clojure.java.io :refer [reader writer]])
-  (:import [java.security KeyPairGenerator PrivateKey KeyPair Security]
+  (:import [java.security KeyPairGenerator PrivateKey KeyPair Security MessageDigest]
            [org.bouncycastle.asn1.x500 X500Name]
-           [java.util Calendar Date Base64]
-           [org.bouncycastle.asn1.x509 SubjectPublicKeyInfo Extension KeyUsage BasicConstraints]
+           [java.util Calendar Date Base64 Vector]
+           [org.bouncycastle.asn1.x509 SubjectPublicKeyInfo Extension KeyUsage BasicConstraints ExtendedKeyUsage KeyPurposeId SubjectKeyIdentifier AuthorityKeyIdentifier]
            [org.bouncycastle.cert X509v3CertificateBuilder]
            [org.bouncycastle.operator.jcajce JcaContentSignerBuilder]
-           [org.bouncycastle.cert.jcajce JcaX509CertificateConverter]
+           [org.bouncycastle.cert.jcajce JcaX509CertificateConverter JcaX500NameUtil JcaX509ExtensionUtils]
            [sun.security.provider X509Factory]
            [java.security.cert X509Certificate]
            [org.bouncycastle.openssl PEMParser]
@@ -16,10 +16,18 @@
            [org.bouncycastle.jce.provider BouncyCastleProvider])
   (:gen-class))
 
-(defonce loaded
-         (when-not (or (map #(instance? BouncyCastleProvider %) (Security/getProviders)))
-           (Security/addProvider (BouncyCastleProvider.))
-           true))
+(defn init!
+  []
+  (println (not-any? #(instance? BouncyCastleProvider %) (Security/getProviders)))
+  (when (not-any? #(instance? BouncyCastleProvider %) (Security/getProviders))
+    (println "Installing BouncyCastleProvider...")
+    (Security/addProvider (BouncyCastleProvider.))))
+
+(defn sha256
+  [^bytes b]
+  (let [h (MessageDigest/getInstance "SHA-256")]
+    (.update h b)
+    (.digest h)))
 
 (defn write-cert
   "Write cert to destination, PEM-formatted. Destination should be openable by clojure.java.io/writer."
@@ -76,29 +84,26 @@
         pki (.decryptPrivateKeyInfo epki decryptor)]
     (.getPrivateKey (JcaPEMKeyConverter.) pki)))
 
+(defn generate-key-pair
+  "Generate a new key pair."
+  [& {:keys [alg key-length] :or {alg "RSA" key-length 2048}}]
+  (.generateKeyPair (doto (KeyPairGenerator/getInstance alg) (.initialize key-length))))
+
 (defn generate-csr
-  "Generate a certificate signing request. Returns a pair of values:
-   first, the private key, second, the signing request."
-  [name & {:keys [key-length hash-alg]
-           :or {key-length 4096 hash-alg "SHA256"}}]
+  "Generate a certificate signing request."
+  [name key-pair
+   & {:keys [alg hash-alg]
+      :or {alg "RSA" hash-alg "SHA256"}}]
   (let [subject (X500Name. name)
-        keygen (doto (KeyPairGenerator/getInstance "RSA")
-                 (.initialize key-length))
-        key-pair (.generateKeyPair keygen)
         spki (SubjectPublicKeyInfo/getInstance (.getEncoded (.getPublic key-pair)))
         builder (PKCS10CertificationRequestBuilder. subject spki)
         signer (.build
-                 (JcaContentSignerBuilder. (str hash-alg "withRSA"))
+                 (JcaContentSignerBuilder. (str hash-alg "with" alg))
                  (.getPrivate key-pair))]
-      [(.getPrivate key-pair) (.build builder signer)]))
+      (.build builder signer)))
 
-(defn generate-key-pair
-  "Generate a new key pair."
-  [& {:keys [alg key-length] :or {alg "RSA" key-length 4096}}]
-  (.generateKeyPair (doto (KeyPairGenerator/getInstance alg) (.initialize key-length))))
-
-(defn generate-ca-cert
-  "Generates a new CA certificate."
+(defn generate-root-cert
+  "Generates a new self-signed root certificate."
   [^KeyPair key-pair & {:keys [hash-alg ^String name years]
                         :or {hash-alg "SHA256" name "CN=CA" years 20}}]
   (let [subject (X500Name. name)
@@ -110,17 +115,20 @@
                                            (.getTime expires)
                                            subject
                                            spki)
-        _ (.addExtension builder Extension/keyUsage true (KeyUsage. (bit-or KeyUsage/keyCertSign KeyUsage/cRLSign KeyUsage/digitalSignature)))
+        _ (.addExtension builder Extension/keyUsage true (KeyUsage. (bit-or KeyUsage/keyCertSign KeyUsage/cRLSign)))
         _ (.addExtension builder Extension/basicConstraints true (BasicConstraints. true))
+        _ (.addExtension builder Extension/subjectKeyIdentifier false
+                         (.createSubjectKeyIdentifier (JcaX509ExtensionUtils.) spki))
         signer (.build
                  (JcaContentSignerBuilder. (str hash-alg "withRSA"))
                  (.getPrivate key-pair))
         certificate (.build builder signer)]
     (.getCertificate (JcaX509CertificateConverter.) certificate)))
 
-(defn generate-root-cert
+(defn generate-ca-cert
+  "Generate a new CA certificate."
   [^X509Certificate cert ^PrivateKey private-key ^PKCS10CertificationRequest csr serial-number
-   & {:keys [hash-alg years] :or {hash-alg "SHA256" years 1}}]
+   & {:keys [hash-alg years ^int max-path-length] :or {hash-alg "SHA256" years 1 max-path-length 5}}]
   (let [expires (doto (Calendar/getInstance) (.add Calendar/YEAR years))
         builder (X509v3CertificateBuilder. (X500Name. (str (.getSubjectX500Principal cert)))
                                            (biginteger serial-number)
@@ -128,8 +136,43 @@
                                            (.getTime expires)
                                            (.getSubject csr)
                                            (.getSubjectPublicKeyInfo csr))
-        _ (.addExtension builder Extension/keyUsage true (KeyUsage. (bit-or KeyUsage/keyCertSign KeyUsage/cRLSign KeyUsage/digitalSignature)))
-        _ (.addExtension builder Extension/basicConstraints true (BasicConstraints. true))
+        _ (.addExtension builder Extension/keyUsage true (KeyUsage. (bit-or KeyUsage/keyCertSign KeyUsage/cRLSign)))
+        _ (.addExtension builder Extension/basicConstraints true
+                         (if max-path-length
+                           (BasicConstraints. max-path-length)
+                           (BasicConstraints. true)))
+        _ (.addExtension builder Extension/subjectKeyIdentifier false
+                         (.createSubjectKeyIdentifier (JcaX509ExtensionUtils.)
+                                                      (.getSubjectPublicKeyInfo csr)))
+        _ (.addExtension builder Extension/authorityKeyIdentifier false
+                           (.createAuthorityKeyIdentifier (JcaX509ExtensionUtils.) cert))
+        signer (.build
+                 (JcaContentSignerBuilder. (str hash-alg "withRSA"))
+                 private-key)
+        certificate (.build builder signer)]
+    (.getCertificate (JcaX509CertificateConverter.) certificate)))
+
+(defn generate-user-cert
+  [^X509Certificate cert ^PrivateKey private-key ^PKCS10CertificationRequest csr serial-number
+   & {:keys [hash-alg years] :or {hash-alg "SHA256" years 1}}]
+  (let [expires (doto (Calendar/getInstance) (.add Calendar/YEAR years))
+        builder (X509v3CertificateBuilder. (JcaX500NameUtil/getSubject cert)
+                                           (biginteger serial-number)
+                                           (Date.)
+                                           (.getTime expires)
+                                           (.getSubject csr)
+                                           (.getSubjectPublicKeyInfo csr))
+        _ (.addExtension builder Extension/basicConstraints true
+                         (BasicConstraints. false))
+        _ (.addExtension builder Extension/extendedKeyUsage false
+                         (ExtendedKeyUsage. (Vector.
+                                              [KeyPurposeId/id_kp_clientAuth
+                                               KeyPurposeId/id_kp_serverAuth])))
+        _ (.addExtension builder Extension/subjectKeyIdentifier false
+                         (.createSubjectKeyIdentifier (JcaX509ExtensionUtils.)
+                                                      (.getSubjectPublicKeyInfo csr)))
+        _ (.addExtension builder Extension/authorityKeyIdentifier false
+                         (.createAuthorityKeyIdentifier (JcaX509ExtensionUtils.) cert))
         signer (.build
                  (JcaContentSignerBuilder. (str hash-alg "withRSA"))
                  private-key)

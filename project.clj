@@ -4,7 +4,9 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.8.0"]
-                 [org.bouncycastle/bcpkix-jdk15on "1.55"]]
+                 [org.bouncycastle/bcpkix-jdk15on "1.55"]
+                 [org.clojure/tools.cli "0.3.5"]]
   :main ^:skip-aot attest.main
   :target-path "target/%s"
-  :profiles {:uberjar {:aot :all}})
+  :profiles {:uberjar {:aot :all}
+             :test {:jvm-opts ["-Djava.security.debug=certpath"]}})
