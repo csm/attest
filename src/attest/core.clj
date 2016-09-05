@@ -18,9 +18,9 @@
 
 (defn init!
   []
-  (println (not-any? #(instance? BouncyCastleProvider %) (Security/getProviders)))
+  ;(println (not-any? #(instance? BouncyCastleProvider %) (Security/getProviders)))
   (when (not-any? #(instance? BouncyCastleProvider %) (Security/getProviders))
-    (println "Installing BouncyCastleProvider...")
+    ;(println "Installing BouncyCastleProvider...")
     (Security/addProvider (BouncyCastleProvider.))))
 
 (defn sha256

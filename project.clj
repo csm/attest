@@ -8,5 +8,4 @@
                  [org.clojure/tools.cli "0.3.5"]]
   :main ^:skip-aot attest.main
   :target-path "target/%s"
-  :profiles {:uberjar {:aot :all}
-             :test {:jvm-opts ["-Djava.security.debug=certpath"]}})
+  :profiles {:uberjar {:aot :all}})

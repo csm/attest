@@ -40,15 +40,12 @@
 (deftest do-we-generate-valid-certs?
   (let [root-keys (generate-key-pair)
         root-cert (generate-root-cert root-keys :name "CN=Root")
-        _ (println "ROOT CERT:\n" root-cert)
         ca-key-pair (generate-key-pair)
         ca-csr (generate-csr "CN=Test CA" ca-key-pair)
         ca-cert (generate-ca-cert root-cert (.getPrivate root-keys) ca-csr 2N)
-        _ (println "CA CERT:\n" ca-cert)
         client-key-pair (generate-key-pair)
         client-csr (generate-csr "CN=Client Cert" client-key-pair)
         client-cert (generate-user-cert ca-cert (.getPrivate ca-key-pair) client-csr 3N)
-        _ (println "CLIENT CERT:\n" client-cert)
         selector (doto (X509CertSelector.) (.setCertificate client-cert))
         builder-params (doto
                          (PKIXBuilderParameters. #{(TrustAnchor. root-cert nil)}
