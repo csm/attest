@@ -6,7 +6,7 @@
   (:import [java.io Console File]))
 
 (defn common-opts
-  [args usage summary files]
+  [args usage summary files required-args]
   (when (:help (:options args))
     (println usage)
     (newline)
@@ -22,7 +22,12 @@
   (when (and (not-any? #(.isAbsolute (file (-> args :options %))) files)
              (not (.exists (file (-> args :options :dir)))))
     (println "Output directory" (.getAbsolutePath (file (-> args :options :dir))) "does not exist")
-    (System/exit 1)))
+    (System/exit 1))
+  (doall
+   (for [arg required-args]
+     (when-not (-> args :options arg)
+       (println "Option" (name arg) "is required")
+       (System/exit 1)))))
 
 (defn get-password
   [args]
@@ -54,14 +59,14 @@
                  [nil "--help" "Show this help and exit"]]
         args (cli/parse-opts args options)]
     (common-opts args "Usage: attest init [options]" "Generate a new self-signed root certificate."
-                 [:output :key-output])
+                 [:output :key-output] [])
     (let [password (get-password args)
           key-pair (generate-key-pair :alg (-> args :options :alg)
                                       :key-length (-> args :options :key-length))
           cert (generate-root-cert key-pair :name (-> args :options :name)
                                    :hash-alg (-> args :options :hash))
           cert-file (file-path (file (-> args :options :dir)) (file (-> args :options :output)))
-          key-file (file-path (file (-> args :options :dir)) (file (-> args :options :output)))]
+          key-file (file-path (file (-> args :options :dir)) (file (-> args :options :key-output)))]
       (write-cert cert cert-file)
       (write-private-key (.getPrivate key-pair) password key-file))))
 
@@ -83,7 +88,7 @@
         args (cli/parse-opts args options)]
     (common-opts args "Usage: attest issue-ca -r request [options]"
                  "Generates a new CA certificate from a certificate signing request."
-                 [:output])
+                 [:output] [:serial :request])
     (let [csr (read-csr (-> args :options :request))
           password (get-password args)
           cert (read-cert (-> args :options :certificate))
@@ -94,7 +99,32 @@
       (write-cert new-cert cert-path))))
 
 (defn issue-client
-  [args])
+  [args]
+  (let [options [["-d" "--dir DIR" "Path to outut directory" :default "."]
+                 ["-r" "--request FILE" "Path to certificate signing request."]
+                 ["-c" "--certificate FILE" "Path to signing certificate."]
+                 ["-k" "--private-key FILE" "Path to private key."]
+                 ["-o" "--output FILE" "Set path to output new cert."
+                  :default "cert.pem"]
+                 ["-p" "--password PASSWORD" "Private key password."]
+                 ["-s" "--serial NUM" "Set new cert serial number."
+                  :parse-fn (fn [s] (bigint s))]
+                 ["-y" "--years NUM" "Set validity to this many years."
+                  :default 1
+                  :parse-fn (fn [s] (Integer/parseInt s))]
+                 [nil "--help" "Show this help and exit."]]
+        args (cli/parse-opts args options)]
+    (common-opts "Usage: attest issue-client -r request [options]"
+                 "Generates a new end user certificate from a certificate signing request."
+                 [:output] [:serial :request])
+    (let [csr (read-csr (-> args :options :request))
+          password (get-password args)
+          cert (read-cert (-> args :options :certificate))
+          private-key (read-private-key (-> args :options :private-key) password)
+          new-cert (generate-user-cert cert private-key csr (-> args :options :serial)
+                                       :years (-> args :options :years))
+          cert-path (file-path (file (-> args :options :dir)) (file (-> args :options :output)))]
+      (write-cert new-cert cert-path))))
 
 (defn req
   [args]
